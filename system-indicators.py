@@ -1,5 +1,4 @@
 from datetime import datetime
-import shutil
 
 import tkinter as tk
 from random import randint, seed, choice
@@ -7,6 +6,8 @@ from string import ascii_letters
 import psutil
 
 class MeasurementIndicator(tk.Label):
+    """Superclass for all indicators"""
+
     keepVisibleNumUpdates = 0
 
     def __init__(self, *args, **kwargs):
@@ -54,11 +55,15 @@ class MeasurementIndicator(tk.Label):
         return "%.1fT" % (num)
 
 class CpuUsageIndicator(MeasurementIndicator):
+    """Indicator for showing CPU usage"""
+
     def measure(self):
         usage = psutil.cpu_percent()
         self.update(usage > 10, "C%.0f%%" % usage, self.clamp01(90, 100, usage))
 
 class CpuMaxTemperatureIndicator(MeasurementIndicator):
+    """Indicator for showing the maximum temperature all cores"""
+
     def measure(self):
         maxTemp = 0
         for core in psutil.sensors_temperatures()['coretemp']:
@@ -68,12 +73,15 @@ class CpuMaxTemperatureIndicator(MeasurementIndicator):
         self.update(True, human, self.clamp01(50, 80, maxTemp))
 
 class MemoryUsageIndicator(MeasurementIndicator):
+    """Indicator for showing percentage of system memory in use"""
     def measure(self):
         usage = psutil.virtual_memory().percent
         human = "M%.0f%%" % usage
         self.update(True, human, self.clamp01(90, 95, usage))
 
 class NetworkThroughputIndicator(MeasurementIndicator):
+    """Indicator for showing network throughput"""
+
     r1 = 0
     t1 = 0
 
@@ -94,6 +102,8 @@ class NetworkThroughputIndicator(MeasurementIndicator):
         self.t1 = t2
 
 class DiskTroughputIndicator(MeasurementIndicator):
+    """Indicator for showing disk throughput"""
+
     r1 = 0
     w1 = 0
 
@@ -116,6 +126,8 @@ class DiskTroughputIndicator(MeasurementIndicator):
         self.w1 = w2
 
 class Window(tk.Tk):
+    """Main window and instantiation of all indicators"""
+
     def __init__(self):
         tk.Tk.__init__(self)
         self.overrideredirect(True)
@@ -140,39 +152,10 @@ class Window(tk.Tk):
         for indicator in self.indicators:
             indicator.measure()
 
+        # Schedule update at next wall clock second
         delay = round((1000000 - datetime.now().microsecond) / 1000)
         self.after(delay, self.update)
 
 window=Window()
 window.update()
 window.mainloop()
-
-# def do_stuff():
-#     s = "C%.0f%% foo bar baz very\nlong string" % psutil.cpu_percent()
-#     s += str(datetime.now().microsecond)
-#     l.config(text=s, bg="black", fg="white")
-#     n.config(text=s, bg="black", fg="white")
-
-#     delay = round((1000000 - datetime.now().microsecond) / 1000)
-#     # root.update_idletasks() 
-#     # width = l.winfo_width() + 10
-#     # print(width)
-#     # root.geometry("{}x{}".format(width, 26))
-#     # root.update_idletasks()
-
-#     root.after(delay, do_stuff)
-
-# root = tk.Tk()
-# root.wm_overrideredirect(True)
-# root.geometry("500x24+1200+1200")
-
-# root.config(bg='silver')
-
-# l = tk.Label(text='', font=("Helvetica", 8))
-# l.pack(expand=True, side=tk.LEFT)
-
-# n = tk.Label(text='Tweede', font=("Helvetica", 8))
-# n.pack(expand=True)
-
-# do_stuff()
-# root.mainloop()
