@@ -1,24 +1,38 @@
 from datetime import datetime
 
 import tkinter as tk
-from random import randint, seed, choice
-from string import ascii_letters
 import psutil
+import yaml
 
 class MeasurementIndicator(tk.Label):
     """Superclass for all indicators"""
 
     keepVisibleNumUpdates = 0
+    redStart = None
+    redEnd = None
 
     def __init__(self, *args, **kwargs):
+        config = kwargs['config']
+        del kwargs['config']
         super().__init__(args, kwargs)
+
+        if 'red' in config:
+            redStartString, redEndString = config['red'].split('-')
+            self.redStart = int(redStartString)
+            self.redEnd = int(redEndString)
+
         self.config(bg="black", fg="white")
 
-    def update(self, visible: bool, text: str, urgency=0):
+    def update(self, visible: bool, text: str, value=0):
         if visible: self.keepVisibleNumUpdates = 10
         else: self.keepVisibleNumUpdates -= 1
 
         if self.keepVisibleNumUpdates <= 0: text = ""
+        
+        urgency = 0
+        if self.redStart != None and self.redEnd != None:
+            urgency = self.clamp01(self.redStart, self.redEnd, value)
+        
         self.config(text=text, background=self.rgbtohex(urgency * 255, 0, 0))
 
     def rgbtohex(self, r, g, b):
@@ -54,12 +68,19 @@ class MeasurementIndicator(tk.Label):
         
         return "%.1fT" % (num)
 
+class LoadIndicator(MeasurementIndicator):
+    """Indicator for showing load"""
+
+    def measure(self):
+        load = psutil.getloadavg()[0];
+        self.update(load > 1, "L{0:.2f}".format(load), load)
+
 class CpuUsageIndicator(MeasurementIndicator):
     """Indicator for showing CPU usage"""
 
     def measure(self):
         usage = psutil.cpu_percent()
-        self.update(usage > 10, "C%.0f%%" % usage, self.clamp01(90, 100, usage))
+        self.update(usage > 10, "C%.0f%%" % usage, usage)
 
 class CpuMaxTemperatureIndicator(MeasurementIndicator):
     """Indicator for showing the maximum temperature all cores"""
@@ -70,14 +91,14 @@ class CpuMaxTemperatureIndicator(MeasurementIndicator):
             if core.current > maxTemp: maxTemp = core.current
 
         human = "%.0f°C" % maxTemp
-        self.update(True, human, self.clamp01(50, 80, maxTemp))
+        self.update(True, human, maxTemp)
 
 class MemoryUsageIndicator(MeasurementIndicator):
     """Indicator for showing percentage of system memory in use"""
     def measure(self):
         usage = psutil.virtual_memory().percent
         human = "M%.0f%%" % usage
-        self.update(True, human, self.clamp01(90, 95, usage))
+        self.update(True, human, usage)
 
 class NetworkThroughputIndicator(MeasurementIndicator):
     """Indicator for showing network throughput"""
@@ -85,9 +106,10 @@ class NetworkThroughputIndicator(MeasurementIndicator):
     r1 = 0
     t1 = 0
 
-    def __init__(self, interface, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.interface = interface
+        config = kwargs['config']
+        self.interface = config['interface']
         
     def measure(self):
         r2 = self.readInteger('/sys/class/net/' + self.interface + '/statistics/rx_bytes')
@@ -107,10 +129,11 @@ class DiskTroughputIndicator(MeasurementIndicator):
     r1 = 0
     w1 = 0
 
-    def __init__(self, device, label, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.device = device
-        self.label = label
+        config = kwargs['config']
+        self.device = config['device']
+        self.label = config['label']
         
     def measure(self):
         stat = self.readString('/sys/block/' + self.device + '/stat').split()
@@ -128,18 +151,26 @@ class DiskTroughputIndicator(MeasurementIndicator):
 class Window(tk.Tk):
     """Main window and instantiation of all indicators"""
 
-    def __init__(self):
+    def __init__(self, config):
         tk.Tk.__init__(self)
         self.overrideredirect(True)
-        self.geometry("+1090+1204")
+        self.geometry(config['window']['geometry'])
+
+        indicatorClasses = {
+            'load': LoadIndicator,
+            'cpu-usage': CpuUsageIndicator,
+            'cpu-max-temperature': CpuMaxTemperatureIndicator,
+            'memory-usage': MemoryUsageIndicator,
+            'network-throughput': NetworkThroughputIndicator,
+            'disk-throughput': DiskTroughputIndicator
+        }
 
         self.indicators = []
-        self.indicators.append(CpuUsageIndicator())
-        self.indicators.append(CpuMaxTemperatureIndicator())
-        self.indicators.append(MemoryUsageIndicator())
-        self.indicators.append(NetworkThroughputIndicator('enp7s0f1'))
-        self.indicators.append(DiskTroughputIndicator('nvme0n1', 'SSD'))
-        self.indicators.append(DiskTroughputIndicator('sda', 'HDD'))
+        for indicatorItem in config['indicators']:
+            indicatorName = next(iter(indicatorItem))
+            indicatorConfig = indicatorItem[indicatorName]
+            indicator = indicatorClasses[indicatorName](config=indicatorConfig)
+            self.indicators.append(indicator)
 
         x = 0
         for indicator in self.indicators:
@@ -156,6 +187,10 @@ class Window(tk.Tk):
         delay = round((1000000 - datetime.now().microsecond) / 1000)
         self.after(delay, self.update)
 
-window=Window()
+config = None
+with open('config.yml') as file:
+    config = yaml.load(file, Loader=yaml.FullLoader)
+
+window=Window(config)
 window.update()
 window.mainloop()
